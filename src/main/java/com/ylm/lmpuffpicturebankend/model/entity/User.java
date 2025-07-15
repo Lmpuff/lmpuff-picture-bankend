@@ -1,9 +1,11 @@
-package generator.domain;
+package com.ylm.lmpuffpicturebankend.model.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
-import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
+
+import java.io.Serializable;
 import java.util.Date;
 import lombok.Data;
 
@@ -13,11 +15,12 @@ import lombok.Data;
  */
 @TableName(value ="user")
 @Data
-public class User {
+public class User implements Serializable {
+    private static final long serialVersionUID = 2182341545524535220L;
     /**
      * id
      */
-    @TableId(type = IdType.AUTO)
+    @TableId(type = IdType.ASSIGN_ID)
     private Long id;
 
     /**
@@ -66,7 +69,8 @@ public class User {
     private Date updateTime;
 
     /**
-     * 是否删除
+     * 是否删除(逻辑删除)
      */
+    @TableLogic
     private Integer isDelete;
 }
