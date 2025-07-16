@@ -1,15 +1,15 @@
 package com.ylm.lmpuffpicturebankend.controller;
 
 import cn.hutool.core.bean.BeanUtil;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.ylm.lmpuffpicturebankend.annotation.AuthCheck;
 import com.ylm.lmpuffpicturebankend.common.BaseResponse;
+import com.ylm.lmpuffpicturebankend.common.DeleteRequest;
 import com.ylm.lmpuffpicturebankend.common.ResultUtils;
 import com.ylm.lmpuffpicturebankend.constant.UserConstant;
 import com.ylm.lmpuffpicturebankend.exception.ErrorCode;
 import com.ylm.lmpuffpicturebankend.exception.ThrowUtils;
-import com.ylm.lmpuffpicturebankend.model.dto.user.UserAddRequest;
-import com.ylm.lmpuffpicturebankend.model.dto.user.UserLoginRequest;
-import com.ylm.lmpuffpicturebankend.model.dto.user.UserRegisterRequest;
+import com.ylm.lmpuffpicturebankend.model.dto.user.*;
 import com.ylm.lmpuffpicturebankend.model.entity.User;
 import com.ylm.lmpuffpicturebankend.model.vo.LoginUserVO;
 import com.ylm.lmpuffpicturebankend.model.vo.UserVO;
@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
+import java.util.List;
 
 @RestController
 @RequestMapping("/user")
@@ -118,6 +119,52 @@ public class UserController {
         BaseResponse<User> userById = getUserById(id);
         User user = userById.getData();
         return ResultUtils.success(userService.getUserVO(user));
+    }
+
+    /**
+     * 更新用户
+     * @param userUpdateRequest
+     * @return
+     */
+    @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
+    @PostMapping("/update")
+    public BaseResponse<Boolean> updateUser(@RequestBody UserUpdateRequest userUpdateRequest) {
+        ThrowUtils.throwIf(userUpdateRequest == null, ErrorCode.PARAMS_ERROR);
+        User user = new User();
+        BeanUtil.copyProperties(userUpdateRequest, user);
+        boolean updateById = userService.updateById(user);
+        ThrowUtils.throwIf(!updateById, ErrorCode.OPERATION_ERROR);
+        return ResultUtils.success(true);
+    }
+
+    /**
+     * 删除用户
+     * @param deleteRequest
+     * @return
+     */
+    @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
+    @DeleteMapping("/delete")
+    public BaseResponse<Boolean> deleteUser(DeleteRequest deleteRequest) {
+        ThrowUtils.throwIf(deleteRequest == null, ErrorCode.PARAMS_ERROR);
+        boolean result = userService.removeById(deleteRequest.getId());
+        return ResultUtils.success(result);
+    }
+
+    /**
+     * 分页查询（仅管理员）
+     */
+    @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
+    @PostMapping("/list/page/vo")
+    public BaseResponse<Page<UserVO>> listUserVOByPage(
+            @RequestBody UserQueryRequest userQueryRequest) {
+        ThrowUtils.throwIf(userQueryRequest == null, ErrorCode.PARAMS_ERROR);
+        long current = userQueryRequest.getCurrent();
+        long pageSize = userQueryRequest.getPageSize();
+        Page<User> userPage = userService.page(new Page<>(current, pageSize),
+                userService.getQueryWrapper(userQueryRequest));
+        Page<UserVO> userVOPage = new Page<>(current, pageSize, userPage.getTotal());
+        List<UserVO> userVOList = userService.getUserVOList(userPage.getRecords());
+        return ResultUtils.success(userVOPage.setRecords(userVOList));
     }
 
 }
