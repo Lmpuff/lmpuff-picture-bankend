@@ -1,4 +1,4 @@
-package com.ylm.lmpuffpicturebankend.model.dto;
+package com.ylm.lmpuffpicturebankend.model.dto.user;
 
 import lombok.Data;
 

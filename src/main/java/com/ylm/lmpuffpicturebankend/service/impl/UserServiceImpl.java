@@ -1,16 +1,21 @@
 package com.ylm.lmpuffpicturebankend.service.impl;
 
+import cn.hutool.core.bean.BeanUtil;
+import cn.hutool.core.util.ObjUtil;
+import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.ylm.lmpuffpicturebankend.constant.UserConstant;
 import com.ylm.lmpuffpicturebankend.exception.BusinessException;
 import com.ylm.lmpuffpicturebankend.exception.ErrorCode;
 import com.ylm.lmpuffpicturebankend.exception.ThrowUtils;
-import com.ylm.lmpuffpicturebankend.model.dto.UserLoginRequest;
-import com.ylm.lmpuffpicturebankend.model.dto.UserRegisterRequest;
+import com.ylm.lmpuffpicturebankend.model.dto.user.UserLoginRequest;
+import com.ylm.lmpuffpicturebankend.model.dto.user.UserQueryRequest;
+import com.ylm.lmpuffpicturebankend.model.dto.user.UserRegisterRequest;
 import com.ylm.lmpuffpicturebankend.model.entity.User;
 import com.ylm.lmpuffpicturebankend.model.enums.UserRoleEnum;
 import com.ylm.lmpuffpicturebankend.model.vo.LoginUserVO;
+import com.ylm.lmpuffpicturebankend.model.vo.UserVO;
 import com.ylm.lmpuffpicturebankend.service.UserService;
 import com.ylm.lmpuffpicturebankend.mapper.UserMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -19,6 +24,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.DigestUtils;
 
 import javax.servlet.http.HttpServletRequest;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
 * @author MI
@@ -114,6 +121,39 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
     }
 
     /**
+     * 获取脱敏后的用户信息
+     *
+     * @param user
+     * @return
+     */
+    @Override
+    public UserVO getUserVO(User user) {
+        if (user == null) {
+            return null;
+        }
+        UserVO userVO = new UserVO();
+        BeanUtil.copyProperties(user, userVO);
+        return userVO;
+    }
+
+    /**
+     * 获取脱敏后的用户信息列表
+     *
+     * @param userList
+     * @return
+     */
+    @Override
+    public List<UserVO> getUserVOList(List<User> userList) {
+        List<UserVO> userVOList = new ArrayList<>();
+        for (User user : userList) {
+            UserVO userVO = new UserVO();
+            BeanUtils.copyProperties(user, userVO);
+            userVOList.add(userVO);
+        }
+        return userVOList;
+    }
+
+    /**
      * 获取当前登录用户
      * @param httpServletRequest
      * @return
@@ -147,13 +187,35 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         return true;
     }
 
+    @Override
+    public QueryWrapper<User> getQueryWrapper(UserQueryRequest userQueryRequest) {
+        ThrowUtils.throwIf(userQueryRequest == null, ErrorCode.PARAMS_ERROR, "请求参数为空");
+        Long id = userQueryRequest.getId();
+        String userName = userQueryRequest.getUserName();
+        String userAccount = userQueryRequest.getUserAccount();
+        String userProfile = userQueryRequest.getUserProfile();
+        String userRole = userQueryRequest.getUserRole();
+        String sortField = userQueryRequest.getSortField();
+        String sortOrder = userQueryRequest.getSortOrder();
+        QueryWrapper<User> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq(ObjUtil.isNotNull(id), "id", id);
+        queryWrapper.eq(StrUtil.isNotBlank(userRole), "userRole", userRole);
+        queryWrapper.like(StrUtil.isNotBlank(userAccount), "userAccount", userAccount);
+        queryWrapper.like(StrUtil.isNotBlank(userProfile), "userProfile", userProfile);
+        queryWrapper.like(StrUtil.isNotBlank(userName), "userName", userName);
+        queryWrapper.orderBy(StrUtil.isNotEmpty(sortField), sortOrder.equals("ascend"), sortField);
+
+        return queryWrapper;
+    }
+
     /**
      * 密码加密处理
      *
      * @param userPassword 用户密码
      * @return 加密后的密码
      */
-    private String passwordEncryptionProcessing(String userPassword) {
+    @Override
+    public String passwordEncryptionProcessing(String userPassword) {
         // 加盐，混淆密码
         final String SALT = "ylm";
         return DigestUtils.md5DigestAsHex((SALT + userPassword).getBytes());
