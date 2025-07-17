@@ -48,7 +48,7 @@ public class FileManager {
             // 上传文件
             file = File.createTempFile(uploadPath, null);
             multipartFile.transferTo(file);
-            PutObjectResult putObjectResult = cosManager.putObject(uploadPath, file);
+            PutObjectResult putObjectResult = cosManager.putPictureObject(uploadPath, file);
             // 封装返回结果
             ImageInfo imageInfo = putObjectResult.getCiUploadResult().getOriginalInfo().getImageInfo();
             String picFormat = imageInfo.getFormat();
@@ -99,7 +99,7 @@ public class FileManager {
         String picSuffix = FileUtil.getSuffix(multipartFile.getOriginalFilename());
         // 允许上传的文件格式
         final List<String> ALLOW_FORMAT_LIST = Arrays.asList("jpg", "jpeg", "png", "webp");
-        ThrowUtils.throwIf(ALLOW_FORMAT_LIST.contains(picSuffix), ErrorCode.PARAMS_ERROR, "文件格式不正确");
+        ThrowUtils.throwIf(!ALLOW_FORMAT_LIST.contains(picSuffix), ErrorCode.PARAMS_ERROR, "文件格式不正确");
     }
 
 }
