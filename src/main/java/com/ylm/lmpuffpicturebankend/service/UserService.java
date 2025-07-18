@@ -79,4 +79,12 @@ public interface UserService extends IService<User> {
      */
     String passwordEncryptionProcessing(String userPassword);
 
+    /**
+     * 判断用户是否为管理员
+     *
+     * @param user
+     * @return
+     */
+    boolean isAdmin(User user);
+
 }

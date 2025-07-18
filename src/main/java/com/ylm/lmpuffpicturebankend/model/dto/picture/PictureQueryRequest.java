@@ -1,34 +1,23 @@
-package com.ylm.lmpuffpicturebankend.model.entity;
+package com.ylm.lmpuffpicturebankend.model.dto.picture;
 
-import com.baomidou.mybatisplus.annotation.*;
+import com.ylm.lmpuffpicturebankend.common.PageRequest;
+import lombok.Data;
+import lombok.EqualsAndHashCode;
 
 import java.io.Serializable;
 import java.util.Date;
+import java.util.List;
 
-import lombok.Data;
-
-/**
- * 图片
- *
- * @TableName picture
- */
-@TableName(value = "picture")
+@EqualsAndHashCode(callSuper = true)
 @Data
-public class Picture implements Serializable {
+public class PictureQueryRequest extends PageRequest implements Serializable {
 
-    @TableField(exist = false)
-    private static final long serialVersionUID = -6153796546896671148L;
+    private static final long serialVersionUID = 3879637839398220047L;
 
     /**
      * id
      */
-    @TableId(type = IdType.ASSIGN_ID)
     private Long id;
-
-    /**
-     * 图片 url
-     */
-    private String url;
 
     /**
      * 图片名称
@@ -46,9 +35,9 @@ public class Picture implements Serializable {
     private String category;
 
     /**
-     * 标签（JSON 数组）
+     * 标签
      */
-    private String tags;
+    private List<String> tags;
 
     /**
      * 图片体积
@@ -76,30 +65,14 @@ public class Picture implements Serializable {
     private String picFormat;
 
     /**
-     * 创建用户 id
+     * 搜索词
+     */
+    private String searchText;
+
+    /**
+     * 用户id
      */
     private Long userId;
-
-    /**
-     * 创建时间
-     */
-    private Date createTime;
-
-    /**
-     * 编辑时间
-     */
-    private Date editTime;
-
-    /**
-     * 更新时间
-     */
-    private Date updateTime;
-
-    /**
-     * 是否删除
-     */
-    @TableLogic
-    private Integer isDelete;
 
     /**
      * 状态：0-待审核; 1-通过; 2-拒绝
