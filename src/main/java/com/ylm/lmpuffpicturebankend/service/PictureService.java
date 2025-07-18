@@ -3,6 +3,7 @@ package com.ylm.lmpuffpicturebankend.service;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.ylm.lmpuffpicturebankend.model.dto.picture.PictureQueryRequest;
+import com.ylm.lmpuffpicturebankend.model.dto.picture.PictureReviewRequest;
 import com.ylm.lmpuffpicturebankend.model.dto.picture.PictureUploadRequest;
 import com.ylm.lmpuffpicturebankend.model.entity.Picture;
 import com.baomidou.mybatisplus.extension.service.IService;
@@ -19,7 +20,9 @@ import javax.servlet.http.HttpServletRequest;
 */
 public interface PictureService extends IService<Picture> {
 
-    PictureVO uploadPicture(MultipartFile multipartFile, PictureUploadRequest pictureUploadRequest,
+
+    PictureVO uploadPicture(Object uploadDataSources,
+                            PictureUploadRequest pictureUploadRequest,
                             User loginUser);
 
     /**
@@ -48,6 +51,23 @@ public interface PictureService extends IService<Picture> {
      */
     Page<PictureVO> getPictureVOPage(Page<Picture> picturePage, HttpServletRequest httpServletRequest);
 
+    /**
+     * 验证图片
+     *
+     * @param picture
+     */
     void verifyTheImage(Picture picture);
 
+    /**
+     * 图片审核
+     */
+    void doPictureReview(PictureReviewRequest pictureReviewRequest, User loginUser);
+
+    /**
+     * 填充审核信息
+     *
+     * @param picture
+     * @param loginUser
+     */
+    void fileReviewParams(Picture picture, User loginUser);
 }

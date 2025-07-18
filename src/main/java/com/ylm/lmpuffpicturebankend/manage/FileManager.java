@@ -21,8 +21,12 @@ import java.io.File;
 import java.lang.reflect.Array;
 import java.util.*;
 
+/**
+ * 文件服务，已废弃，改为使用 upload 保的模板方法优化
+ */
 @Service
 @Slf4j
+@Deprecated
 public class FileManager {
 
     @Resource

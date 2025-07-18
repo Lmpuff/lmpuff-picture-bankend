@@ -11,12 +11,10 @@ import com.ylm.lmpuffpicturebankend.common.ResultUtils;
 import com.ylm.lmpuffpicturebankend.constant.UserConstant;
 import com.ylm.lmpuffpicturebankend.exception.ErrorCode;
 import com.ylm.lmpuffpicturebankend.exception.ThrowUtils;
-import com.ylm.lmpuffpicturebankend.model.dto.picture.PictureEditRequest;
-import com.ylm.lmpuffpicturebankend.model.dto.picture.PictureQueryRequest;
-import com.ylm.lmpuffpicturebankend.model.dto.picture.PictureUpdateRequest;
-import com.ylm.lmpuffpicturebankend.model.dto.picture.PictureUploadRequest;
+import com.ylm.lmpuffpicturebankend.model.dto.picture.*;
 import com.ylm.lmpuffpicturebankend.model.entity.Picture;
 import com.ylm.lmpuffpicturebankend.model.entity.User;
+import com.ylm.lmpuffpicturebankend.model.enums.PictureReviewStatusEnum;
 import com.ylm.lmpuffpicturebankend.model.vo.PictureTagCategory;
 import com.ylm.lmpuffpicturebankend.model.vo.PictureVO;
 import com.ylm.lmpuffpicturebankend.service.PictureService;
@@ -53,12 +51,29 @@ public class PictureController {
      * @return
      */
     @PostMapping("/upload")
-    @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
+//    @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
     public BaseResponse<PictureVO> uploadPicture(@RequestPart("file") MultipartFile multipartFile,
                                                  PictureUploadRequest pictureUploadRequest,
                                                  HttpServletRequest httpServletRequest) {
         User loginUser = userService.getLoginUser(httpServletRequest);
         PictureVO pictureVO = pictureService.uploadPicture(multipartFile, pictureUploadRequest, loginUser);
+        return ResultUtils.success(pictureVO);
+
+    }
+
+    /**
+     * 通过 Url 上传图片
+     * @param pictureUploadRequest
+     * @param httpServletRequest
+     * @return
+     */
+    @PostMapping("/upload/url")
+//    @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
+    public BaseResponse<PictureVO> uploadPictureByUrl(@RequestBody PictureUploadRequest pictureUploadRequest,
+                                                 HttpServletRequest httpServletRequest) {
+        User loginUser = userService.getLoginUser(httpServletRequest);
+        String fileUrl = pictureUploadRequest.getFileUrl();
+        PictureVO pictureVO = pictureService.uploadPicture(fileUrl, pictureUploadRequest, loginUser);
         return ResultUtils.success(pictureVO);
 
     }
@@ -76,15 +91,15 @@ public class PictureController {
         ThrowUtils.throwIf(deleteRequest == null || deleteRequest.getId() <= 0,
                 ErrorCode.PARAMS_ERROR);
         User loginUser = userService.getLoginUser(httpServletRequest);
-        Long id = loginUser.getId();
+        Long id = deleteRequest.getId();
         // 判断是否存在
-        Picture picture = pictureService.getById(id);
-        ThrowUtils.throwIf(picture == null, ErrorCode.NOT_FOUND_ERROR);
+        Picture oldPicture = pictureService.getById(id);
+        ThrowUtils.throwIf(oldPicture == null, ErrorCode.NOT_FOUND_ERROR);
         // 仅本人或管理员可以进行删除
-        ThrowUtils.throwIf(!picture.getUserId().equals(loginUser.getId()) && !userService.isAdmin(loginUser),
+        ThrowUtils.throwIf(!oldPicture.getUserId().equals(loginUser.getId()) && !userService.isAdmin(loginUser),
                 ErrorCode.NO_AUTH_ERROR);
         // 操作数据库
-        boolean result = pictureService.removeById(picture.getId());
+        boolean result = pictureService.removeById(id);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR, "删除失败");
         return ResultUtils.success(true);
     }
@@ -96,7 +111,8 @@ public class PictureController {
      */
     @PostMapping("/update")
     @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
-    public BaseResponse<Boolean> updatePicture(@RequestBody PictureUpdateRequest pictureUpdateRequest) {
+    public BaseResponse<Boolean> updatePicture(@RequestBody PictureUpdateRequest pictureUpdateRequest,
+                                               HttpServletRequest httpServletRequest) {
         ThrowUtils.throwIf(pictureUpdateRequest == null || pictureUpdateRequest.getId() <= 0,
                 ErrorCode.PARAMS_ERROR);
         // 将实体类和DTO进行转换
@@ -109,7 +125,10 @@ public class PictureController {
         // 判断是否存在
         Long id = pictureUpdateRequest.getId();
         Picture pictureServiceById = pictureService.getById(id);
+        User loginUser = userService.getLoginUser(httpServletRequest);
         ThrowUtils.throwIf(pictureServiceById == null, ErrorCode.NOT_FOUND_ERROR);
+        // 补充审核信息
+        pictureService.fileReviewParams(picture, loginUser);
         // 操作数据库
         boolean result = pictureService.updateById(picture);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
@@ -165,6 +184,8 @@ public class PictureController {
         int pageSize = pictureQueryRequest.getPageSize();
         int current = pictureQueryRequest.getCurrent();
         ThrowUtils.throwIf(pageSize > 20, ErrorCode.PARAMS_ERROR);
+        // 普通用户默认只能看到审核通过的数据
+        pictureQueryRequest.setReviewStatus(PictureReviewStatusEnum.PASS.getValue());
         // 查询数据库
         Page<Picture> picturePage = pictureService.page(new Page<>(current, pageSize),
                 pictureService.getQueryWrapper(pictureQueryRequest));
@@ -178,22 +199,24 @@ public class PictureController {
     @PostMapping("/edit")
     public BaseResponse<Boolean> editPicture(@RequestBody PictureEditRequest pictureEditRequest,
                                              HttpServletRequest httpServletRequest) {
-        ThrowUtils.throwIf(pictureEditRequest == null, ErrorCode.PARAMS_ERROR);
+        ThrowUtils.throwIf(pictureEditRequest == null || pictureEditRequest.getId() <= 0, ErrorCode.PARAMS_ERROR);
         // 将实体类和DTO进行转换
         Picture picture = new Picture();
-        BeanUtil.copyProperties(picture, pictureEditRequest);
+        BeanUtils.copyProperties(pictureEditRequest, picture);
+        User loginUser = userService.getLoginUser(httpServletRequest);
         // 将list 转为String
         picture.setTags(JSONUtil.toJsonStr(pictureEditRequest.getTags()));
         // 设置编辑时间
         picture.setEditTime(new Date());
         // 数据校验
         pictureService.verifyTheImage(picture);
+        // 补充审核参数
+        pictureService.fileReviewParams(picture, loginUser);
         // 判断是否存在
         Picture oldPicture = pictureService.getById(pictureEditRequest.getId());
         ThrowUtils.throwIf(oldPicture == null, ErrorCode.NOT_FOUND_ERROR);
-        User loginUser = userService.getLoginUser(httpServletRequest);
         // 仅本人或管理员可以进行修改
-        ThrowUtils.throwIf(!picture.getUserId().equals(loginUser.getId()) && !userService.isAdmin(loginUser),
+        ThrowUtils.throwIf(!oldPicture.getUserId().equals(loginUser.getId()) && !userService.isAdmin(loginUser),
                 ErrorCode.NO_AUTH_ERROR);
         // 操作数据库
         boolean result = pictureService.updateById(picture);
@@ -201,15 +224,32 @@ public class PictureController {
         return ResultUtils.success(true);
     }
 
+    /**
+     * 获取图片标签和分类
+     */
     @GetMapping("/tag_category")
     public BaseResponse<PictureTagCategory> listPictureTagCategory() {
         PictureTagCategory pictureTagCategory = new PictureTagCategory();
-        List<String> tagList = Arrays.asList("热门", "搞笑", "生活", "二次元", "艺术", "校园", "背景", "创意");
-        List<String> categoryList = Arrays.asList("二次元", "电商", "表情包", "素材", "海报");
+        List<String> tagList = Arrays.asList("热门", "搞笑", "生活", "动漫", "艺术", "校园", "背景", "创意");
+        List<String> categoryList = Arrays.asList("动漫", "电商", "表情包", "素材", "海报");
         pictureTagCategory.setTagList(tagList);
         pictureTagCategory.setCategoryList(categoryList);
         return ResultUtils.success(pictureTagCategory);
     }
 
+    /**
+     * 图片审核，仅管理员可用
+     */
+    @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
+    @PostMapping("/review")
+    public BaseResponse<Boolean> doPictureReview(@RequestBody PictureReviewRequest pictureReviewRequest,
+                                                 HttpServletRequest httpServletRequest) {
+        // 校验参数
+        ThrowUtils.throwIf(pictureReviewRequest == null, ErrorCode.PARAMS_ERROR);
+        // 调用Service层
+        User loginUser = userService.getLoginUser(httpServletRequest);
+        pictureService.doPictureReview(pictureReviewRequest, loginUser);
+        return ResultUtils.success(true);
+    }
 
 }
