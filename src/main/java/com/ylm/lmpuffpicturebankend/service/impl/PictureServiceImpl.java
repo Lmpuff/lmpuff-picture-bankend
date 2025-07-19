@@ -13,6 +13,8 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.ylm.lmpuffpicturebankend.common.ResultUtils;
+import com.ylm.lmpuffpicturebankend.config.CachePictureConfig;
 import com.ylm.lmpuffpicturebankend.constant.UserConstant;
 import com.ylm.lmpuffpicturebankend.exception.BusinessException;
 import com.ylm.lmpuffpicturebankend.exception.ErrorCode;
@@ -40,7 +42,10 @@ import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 import org.springframework.beans.BeanUtils;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.stereotype.Service;
+import org.springframework.util.DigestUtils;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
@@ -52,6 +57,7 @@ import java.net.MalformedURLException;
 import java.net.ProtocolException;
 import java.net.URL;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 
 /**
 * @author MI
@@ -74,6 +80,12 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture>
 
     @Resource
     private UrlPictureUpload urlPictureUpload;
+
+    @Resource
+    StringRedisTemplate stringRedisTemplate;
+
+    @Resource
+    private CachePictureConfig cachePictureConfig;
 
     /**
      * 上传图片
@@ -429,7 +441,58 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture>
         return uploadCount;
     }
 
+    /**
+     * 使用多级缓存进行查询
+     * @param pictureQueryRequest
+     * @param httpServletRequest
+     * @return
+     */
+    @Override
+    public Page<PictureVO> getPictureVOPageWithCache(PictureQueryRequest pictureQueryRequest, HttpServletRequest httpServletRequest) {
+        // 校验参数
+        ThrowUtils.throwIf(pictureQueryRequest == null, ErrorCode.PARAMS_ERROR);
+        int pageSize = pictureQueryRequest.getPageSize();
+        int current = pictureQueryRequest.getCurrent();
+        ThrowUtils.throwIf(pageSize > 20, ErrorCode.PARAMS_ERROR);
 
+        // 普通用户默认只能看到审核通过的数据
+        pictureQueryRequest.setReviewStatus(PictureReviewStatusEnum.PASS.getValue());
+
+        // 构建缓存 key
+        String jsonStr = JSONUtil.toJsonStr(pictureQueryRequest);
+        String digestAsHex = DigestUtils.md5DigestAsHex(jsonStr.getBytes());
+        String cacheKey = String.format("lmpuffpicture:listPictureVOByPage:%s", digestAsHex);
+
+        // 先查本地缓存
+        String cacheValue = cachePictureConfig.pictureCache().getIfPresent(cacheKey);
+        if (cacheValue != null) {
+            return JSONUtil.toBean(cacheValue, Page.class);
+        }
+
+        // 本地缓存未命中，查 Redis 缓存
+        ValueOperations<String, String> opsForValue = stringRedisTemplate.opsForValue();
+        cacheValue = opsForValue.get(cacheKey);
+        if (cacheValue != null) {
+            // 如果缓存命中，更新本地缓存，返回数据
+            cachePictureConfig.pictureCache().put(cacheKey, cacheValue);
+            return JSONUtil.toBean(cacheValue, Page.class);
+        }
+
+        // 查询数据库
+        Page<Picture> picturePage = page(new Page<>(current, pageSize),
+                getQueryWrapper(pictureQueryRequest));
+        Page<PictureVO> pictureVOPage = getPictureVOPage(picturePage, httpServletRequest);
+        String cacheValuePictureVO = JSONUtil.toJsonStr(pictureVOPage);
+
+        // 设置缓存过期时间, 5 - 10 分钟过期, 防止缓存雪崩
+        int cacheExpireTime = 300 + RandomUtil.randomInt(0, 300);
+        opsForValue.set(cacheKey, cacheValuePictureVO, cacheExpireTime, TimeUnit.SECONDS);
+
+        // 写入本地缓存
+        cachePictureConfig.pictureCache().put(cacheKey, cacheValuePictureVO);
+
+        return pictureVOPage;
+    }
 
 
 

@@ -10,6 +10,12 @@ spring:
     url: jdbc:mysql://localhost:3306/lmpuff_picture?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&allowPublicKeyRetrieval=true
     username: root
     password: ylm20031105
+# Redis配置
+  redis:
+    host: localhost
+    port: 6379
+    database: 1
+    timeout: 5000
   servlet:
     multipart:
       max-file-size: 10MB

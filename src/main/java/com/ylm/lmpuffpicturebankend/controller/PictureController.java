@@ -1,9 +1,13 @@
 package com.ylm.lmpuffpicturebankend.controller;
 
 import cn.hutool.core.bean.BeanUtil;
+import cn.hutool.core.util.RandomUtil;
+import cn.hutool.crypto.digest.DigestUtil;
 import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import com.ylm.lmpuffpicturebankend.annotation.AuthCheck;
 import com.ylm.lmpuffpicturebankend.common.BaseResponse;
 import com.ylm.lmpuffpicturebankend.common.DeleteRequest;
@@ -22,6 +26,9 @@ import com.ylm.lmpuffpicturebankend.service.UserService;
 import com.ylm.lmpuffpicturebankend.service.impl.PictureServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.util.DigestUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -30,6 +37,7 @@ import javax.servlet.http.HttpServletRequest;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 @RestController
 @RequestMapping("/picture")
@@ -41,6 +49,10 @@ public class PictureController {
 
     @Resource
     private UserService userService;
+
+    @Resource
+    private StringRedisTemplate stringRedisTemplate;
+
 
     /**
      * 上传图片
@@ -181,16 +193,27 @@ public class PictureController {
                                                              HttpServletRequest httpServletRequest) {
         ThrowUtils.throwIf(pictureQueryRequest == null, ErrorCode.PARAMS_ERROR);
         // 限制过多获取图片
-        int pageSize = pictureQueryRequest.getPageSize();
-        int current = pictureQueryRequest.getCurrent();
-        ThrowUtils.throwIf(pageSize > 20, ErrorCode.PARAMS_ERROR);
+        long size = pictureQueryRequest.getPageSize();
+        long current = pictureQueryRequest.getCurrent();
+        ThrowUtils.throwIf(size > 20, ErrorCode.PARAMS_ERROR);
         // 普通用户默认只能看到审核通过的数据
         pictureQueryRequest.setReviewStatus(PictureReviewStatusEnum.PASS.getValue());
         // 查询数据库
-        Page<Picture> picturePage = pictureService.page(new Page<>(current, pageSize),
+        Page<Picture> picturePage = pictureService.page(new Page<>(current, size),
                 pictureService.getQueryWrapper(pictureQueryRequest));
         // 获取封装类
         return ResultUtils.success(pictureService.getPictureVOPage(picturePage, httpServletRequest));
+    }
+
+    /**
+     * 分页获取图片列表，封装类(有缓存的查询)
+     */
+    @PostMapping("/list/page/vo/cache")
+    public BaseResponse<Page<PictureVO>> listPictureVOByPageWithCache(@RequestBody PictureQueryRequest pictureQueryRequest,
+                                                             HttpServletRequest httpServletRequest) {
+        ThrowUtils.throwIf(pictureQueryRequest == null, ErrorCode.PARAMS_ERROR);
+        Page<PictureVO> pictureVOPage = pictureService.getPictureVOPageWithCache(pictureQueryRequest, httpServletRequest);
+        return ResultUtils.success(pictureVOPage);
     }
 
     /**
