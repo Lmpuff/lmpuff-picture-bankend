@@ -31,7 +31,7 @@ public class UrlPictureUpload extends PictureUploadTemplate {
     @Override
     protected String getOriginalFilename(Object uploadDataSources) {
         String fileUrl = (String) uploadDataSources;
-        return FileUtil.mainName(fileUrl);
+        return FileUtil.getName(fileUrl);
     }
 
     @Override

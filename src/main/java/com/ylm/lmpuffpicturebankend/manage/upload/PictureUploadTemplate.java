@@ -103,7 +103,7 @@ public abstract class PictureUploadTemplate {
         double picScale = NumberUtil.round(picHeight * 1.0 / picWidth, 2).doubleValue();
         UploadPictureResult uploadPictureResult = new UploadPictureResult();
         uploadPictureResult.setUrl(cosClientConfig.getHost() + "/" + uploadPath);
-        uploadPictureResult.setPicName(FileUtil.mainName(originalFilename));
+        uploadPictureResult.setPicName(FileUtil.getName(originalFilename));
         uploadPictureResult.setPicSize(FileUtil.size(file));
         uploadPictureResult.setPicWidth(picWidth);
         uploadPictureResult.setPicHeight(picHeight);

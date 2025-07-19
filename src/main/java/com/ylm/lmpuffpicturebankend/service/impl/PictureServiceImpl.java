@@ -2,11 +2,19 @@ package com.ylm.lmpuffpicturebankend.service.impl;
 
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.ObjUtil;
+import cn.hutool.core.util.ObjectUtil;
+import cn.hutool.core.util.RandomUtil;
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.json.JSONArray;
+import cn.hutool.json.JSONObject;
+import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.ylm.lmpuffpicturebankend.constant.UserConstant;
+import com.ylm.lmpuffpicturebankend.exception.BusinessException;
 import com.ylm.lmpuffpicturebankend.exception.ErrorCode;
 import com.ylm.lmpuffpicturebankend.exception.ThrowUtils;
 import com.ylm.lmpuffpicturebankend.manage.FileManager;
@@ -16,6 +24,7 @@ import com.ylm.lmpuffpicturebankend.manage.upload.UrlPictureUpload;
 import com.ylm.lmpuffpicturebankend.model.dto.file.UploadPictureResult;
 import com.ylm.lmpuffpicturebankend.model.dto.picture.PictureQueryRequest;
 import com.ylm.lmpuffpicturebankend.model.dto.picture.PictureReviewRequest;
+import com.ylm.lmpuffpicturebankend.model.dto.picture.PictureUploadByBatchRequest;
 import com.ylm.lmpuffpicturebankend.model.dto.picture.PictureUploadRequest;
 import com.ylm.lmpuffpicturebankend.model.entity.Picture;
 import com.ylm.lmpuffpicturebankend.model.entity.User;
@@ -25,11 +34,23 @@ import com.ylm.lmpuffpicturebankend.model.vo.UserVO;
 import com.ylm.lmpuffpicturebankend.service.PictureService;
 import com.ylm.lmpuffpicturebankend.mapper.PictureMapper;
 import com.ylm.lmpuffpicturebankend.service.UserService;
+import lombok.extern.slf4j.Slf4j;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.ProtocolException;
+import java.net.URL;
 import java.util.*;
 
 /**
@@ -38,6 +59,7 @@ import java.util.*;
 * @createDate 2025-07-16 22:20:11
 */
 @Service
+@Slf4j
 public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture>
     implements PictureService{
 
@@ -94,14 +116,17 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture>
         UploadPictureResult uploadPictureResult = pictureUploadTemplate.uploadPicture(uploadDataSources, uploadPathPrefix);
         // 构造要入库的图片信息
         Picture picture = new Picture();
-        String url = uploadPictureResult.getUrl();
+        // 构造要入库的图片信息
         String picName = uploadPictureResult.getPicName();
+        if (pictureUploadRequest != null && StrUtil.isNotBlank(pictureUploadRequest.getPicName())) {
+            picName = pictureUploadRequest.getPicName();
+        }
         Long picSize = uploadPictureResult.getPicSize();
         int picWidth = uploadPictureResult.getPicWidth();
         int picHeight = uploadPictureResult.getPicHeight();
         Double picScale = uploadPictureResult.getPicScale();
         String picFormat = uploadPictureResult.getPicFormat();
-        picture.setUrl(url);
+        picture.setUrl(uploadPictureResult.getUrl());
         picture.setName(picName);
         picture.setPicSize(picSize);
         picture.setPicWidth(picWidth);
@@ -326,6 +351,86 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture>
             picture.setReviewStatus(PictureReviewStatusEnum.REVIEWED.getValue());
         }
     }
+
+    /**
+     * 批量抓取和创建图片
+     *
+     * @param pictureUploadByBatchRequest
+     * @param loginUser
+     * @return 创建成功的图片数量
+     */
+    @Override
+    public Integer uploadPictureByBatch(PictureUploadByBatchRequest pictureUploadByBatchRequest, User loginUser) {
+        String searchText = pictureUploadByBatchRequest.getSearchText();
+        // 格式化数量
+        Integer count = pictureUploadByBatchRequest.getCount();
+        ThrowUtils.throwIf(count > 30, ErrorCode.PARAMS_ERROR, "最多 30 条");
+        String namePrefix = pictureUploadByBatchRequest.getNamePrefix();
+        Integer offset = RandomUtil.randomInt(1, 350);
+        if (StrUtil.isBlank(namePrefix)) {
+            // 名称等于默认值
+            namePrefix = searchText;
+        }
+        // 要抓取的地址
+        String fetchUrl = String.format("https://cn.bing.com/images/async?q=%s&mmasync=1&first=%s", searchText,  offset);
+        Document document;
+        try {
+            document = Jsoup.connect(fetchUrl).get();
+        } catch (IOException e) {
+            log.error("获取页面失败", e);
+            throw new BusinessException(ErrorCode.OPERATION_ERROR, "获取页面失败");
+        }
+        Element div = document.getElementsByClass("dgControl").first();
+        if (ObjUtil.isNull(div)) {
+            throw new BusinessException(ErrorCode.OPERATION_ERROR, "获取元素失败");
+        }
+//        Elements imgElementList = div.select("img.mimg");
+        // 修改选择器，获取包含完整数据的元素
+        Elements imgElementList = div.select(".iusc");
+        int uploadCount = 0;
+        for (Element imgElement : imgElementList) {
+//            String fileUrl = imgElement.attr("src");
+            // 获取data-M属性中的JSON字符串
+            String dataM = imgElement.attr("m");
+            String fileUrl = null;
+            try {
+                // 解析JSON字符串
+                JSONObject jsonObject = JSONUtil.parseObj(dataM);
+                // 获取murl 字段(原式图片URL)
+                fileUrl = jsonObject.getStr("murl");
+            } catch (Exception e) {
+                log.error("解析图片数据失败", e);
+            }
+            if (StrUtil.isBlank(fileUrl)) {
+                log.info("当前链接为空，已跳过: {}", fileUrl);
+                continue;
+            }
+            // 处理图片上传地址，防止出现转义问题
+            int questionMarkIndex = fileUrl.indexOf("?");
+            if (questionMarkIndex > -1) {
+                fileUrl = fileUrl.substring(0, questionMarkIndex);
+            }
+            // 上传图片
+            PictureUploadRequest pictureUploadRequest = new PictureUploadRequest();
+            pictureUploadRequest.setFileUrl(fileUrl);
+            pictureUploadRequest.setPicName(namePrefix + (uploadCount + 1));
+            try {
+                PictureVO pictureVO = this.uploadPicture(fileUrl, pictureUploadRequest, loginUser);
+                log.info("图片上传成功, id = {}", pictureVO.getId());
+                uploadCount++;
+            } catch (Exception e) {
+                log.error("图片上传失败", e);
+                continue;
+            }
+            if (uploadCount >= count) {
+                break;
+            }
+        }
+        return uploadCount;
+    }
+
+
+
 
 
 }
