@@ -90,4 +90,10 @@ public interface PictureService extends IService<Picture> {
      */
     Page<PictureVO> getPictureVOPageWithCache(PictureQueryRequest pictureQueryRequest, HttpServletRequest httpServletRequest);
 
+
+    /**
+     * 清理文件图片
+     * @param picture
+     */
+    void clearPicture(Picture picture);
 }

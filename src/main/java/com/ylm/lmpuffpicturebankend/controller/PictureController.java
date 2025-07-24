@@ -12,6 +12,7 @@ import com.ylm.lmpuffpicturebankend.annotation.AuthCheck;
 import com.ylm.lmpuffpicturebankend.common.BaseResponse;
 import com.ylm.lmpuffpicturebankend.common.DeleteRequest;
 import com.ylm.lmpuffpicturebankend.common.ResultUtils;
+import com.ylm.lmpuffpicturebankend.config.CachePictureConfig;
 import com.ylm.lmpuffpicturebankend.constant.UserConstant;
 import com.ylm.lmpuffpicturebankend.exception.ErrorCode;
 import com.ylm.lmpuffpicturebankend.exception.ThrowUtils;
@@ -37,6 +38,7 @@ import javax.servlet.http.HttpServletRequest;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 @RestController
@@ -53,6 +55,8 @@ public class PictureController {
     @Resource
     private StringRedisTemplate stringRedisTemplate;
 
+    @Resource
+    private CachePictureConfig cachePictureConfig;
 
     /**
      * 上传图片
@@ -69,6 +73,11 @@ public class PictureController {
                                                  HttpServletRequest httpServletRequest) {
         User loginUser = userService.getLoginUser(httpServletRequest);
         PictureVO pictureVO = pictureService.uploadPicture(multipartFile, pictureUploadRequest, loginUser);
+        // 只有管理员上传的图片会自动审核通过，需要清除缓存以保证列表数据一致性
+        // 普通用户上传的图片处于待审核状态，不会立即显示在列表中，无需清除缓存
+        if (userService.isAdmin(loginUser)) {
+            clearCache();
+        }
         return ResultUtils.success(pictureVO);
 
     }
@@ -86,6 +95,11 @@ public class PictureController {
         User loginUser = userService.getLoginUser(httpServletRequest);
         String fileUrl = pictureUploadRequest.getFileUrl();
         PictureVO pictureVO = pictureService.uploadPicture(fileUrl, pictureUploadRequest, loginUser);
+        // 只有管理员上传的图片会自动审核通过，需要清除缓存以保证列表数据一致性
+        // 普通用户上传的图片处于待审核状态，不会立即显示在列表中，无需清除缓存
+        if (userService.isAdmin(loginUser)) {
+            clearCache();
+        }
         return ResultUtils.success(pictureVO);
 
     }
@@ -113,8 +127,14 @@ public class PictureController {
         // 操作数据库
         boolean result = pictureService.removeById(id);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR, "删除失败");
+        // 清除缓存
+        clearCache();
+        // 清理图片资源
+        pictureService.clearPicture(oldPicture);
         return ResultUtils.success(true);
     }
+
+
 
     /**
      * 更新图片，仅管理员可用
@@ -144,6 +164,8 @@ public class PictureController {
         // 操作数据库
         boolean result = pictureService.updateById(picture);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
+        // 清除缓存
+        clearCache();
         return ResultUtils.success(true);
     }
 
@@ -272,6 +294,8 @@ public class PictureController {
         // 调用Service层
         User loginUser = userService.getLoginUser(httpServletRequest);
         pictureService.doPictureReview(pictureReviewRequest, loginUser);
+        // 清除缓存
+        clearCache();
         return ResultUtils.success(true);
     }
 
@@ -290,7 +314,30 @@ public class PictureController {
         ThrowUtils.throwIf(pictureUploadByBatchRequest == null, ErrorCode.PARAMS_ERROR);
         User loginUser = userService.getLoginUser(request);
         int uploadCount = pictureService.uploadPictureByBatch(pictureUploadByBatchRequest, loginUser);
+        // 清除缓存
+        clearCache();
         return ResultUtils.success(uploadCount);
+    }
+
+    /**
+     * 删除缓存
+     */
+    private void clearCache() {
+        final String pictureCacheKey = "lmpuffpicture:listPictureVOByPage:*";
+        // 删除 caffeine 本地缓存
+        // 获取Caffeine缓存实例
+        Cache<String, String> pictureCache = cachePictureConfig.pictureCache();
+        // 获取所有缓存键
+        // 注意：Caffeine没有直接的pattern匹配方法，需要遍历所有键
+        pictureCache.asMap().keySet().removeIf(key ->
+                key != null && key.startsWith("lmpuffpicture:listPictureVOByPage:")
+        );
+        // 删除 Redis 缓存
+        // 删除 Redis 缓存
+        Set<String> keys = stringRedisTemplate.keys(pictureCacheKey);
+        if (!keys.isEmpty()) {
+            stringRedisTemplate.delete(keys);
+        }
     }
 
 

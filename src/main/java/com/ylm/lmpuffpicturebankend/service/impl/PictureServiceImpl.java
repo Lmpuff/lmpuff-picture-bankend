@@ -2,23 +2,19 @@ package com.ylm.lmpuffpicturebankend.service.impl;
 
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.ObjUtil;
-import cn.hutool.core.util.ObjectUtil;
 import cn.hutool.core.util.RandomUtil;
 import cn.hutool.core.util.StrUtil;
-import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.ylm.lmpuffpicturebankend.common.ResultUtils;
 import com.ylm.lmpuffpicturebankend.config.CachePictureConfig;
 import com.ylm.lmpuffpicturebankend.constant.UserConstant;
 import com.ylm.lmpuffpicturebankend.exception.BusinessException;
 import com.ylm.lmpuffpicturebankend.exception.ErrorCode;
 import com.ylm.lmpuffpicturebankend.exception.ThrowUtils;
+import com.ylm.lmpuffpicturebankend.manage.CosManager;
 import com.ylm.lmpuffpicturebankend.manage.FileManager;
 import com.ylm.lmpuffpicturebankend.manage.upload.FilePictureUpload;
 import com.ylm.lmpuffpicturebankend.manage.upload.PictureUploadTemplate;
@@ -42,8 +38,10 @@ import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 import org.springframework.beans.BeanUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.util.DigestUtils;
 
@@ -86,6 +84,9 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture>
 
     @Resource
     private CachePictureConfig cachePictureConfig;
+
+    @Resource
+    private CosManager cosManager;
 
     /**
      * 上传图片
@@ -138,7 +139,10 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture>
         int picHeight = uploadPictureResult.getPicHeight();
         Double picScale = uploadPictureResult.getPicScale();
         String picFormat = uploadPictureResult.getPicFormat();
+        // 设置压缩后原图 Url
         picture.setUrl(uploadPictureResult.getUrl());
+        // 设置缩略图 Url
+        picture.setThumbnailUrl(uploadPictureResult.getThumbnailUrl());
         picture.setName(picName);
         picture.setPicSize(picSize);
         picture.setPicWidth(picWidth);
@@ -156,6 +160,10 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture>
             picture.setEditTime(new Date());
         }
         boolean result = this.saveOrUpdate(picture);
+        //  判断是更新还是新增，如果是更新，清理资源
+        if (pictureId == null) {
+            this.clearPicture(picture);
+        }
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR, "图片上传失败");
         return PictureVO.objToVo(picture);
     }
@@ -494,6 +502,29 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture>
         return pictureVOPage;
     }
 
+    /**
+     * 清理文件信息，异步执行
+     * @param picture
+     */
+    @Async
+    @Override
+    public void clearPicture(Picture picture) {
+        // 判断图片是否被多条记录使用
+        String pictureUrl = picture.getUrl();
+        long count = this.lambdaQuery()
+                .eq(Picture::getUrl, pictureUrl)
+                .count();
+        if (count > 1) {
+            // 被多条记录使用, 不进行处理
+            return;
+        }
+        // 删除对应图片所在存储信息
+        cosManager.deleteObject(pictureUrl);
+        String thumbnailUrl = picture.getThumbnailUrl();
+        if (StrUtil.isNotBlank(thumbnailUrl)) {
+            cosManager.deleteObject(thumbnailUrl);
+        }
+    }
 
 
 }

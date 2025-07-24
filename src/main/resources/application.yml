@@ -2,6 +2,10 @@ server:
   port: 8003
   servlet:
     context-path: /api
+    # cookie 配置 30 天过期
+    session:
+      cookie:
+        max-age: 2592000
 spring:
   application:
     name: lmpuff-picture-backend
@@ -16,6 +20,11 @@ spring:
     port: 6379
     database: 1
     timeout: 5000
+  # Session 配置
+  session:
+    store-type: redis
+    # 设置过期时间为 30 天
+    timeout: 2592000
   servlet:
     multipart:
       max-file-size: 10MB
